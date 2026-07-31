@@ -7,6 +7,7 @@ import sys
 from collections.abc import Callable
 from pathlib import Path
 
+from nova.agents.router import AgentRouter
 from nova.audit import AuditLog
 from nova.config import NovaConfig
 from nova.llm import get_provider
@@ -44,6 +45,7 @@ def build_orchestrator(config: NovaConfig) -> Orchestrator:
         permissions=PermissionEngine(DEFAULT_POLICY, audit),
         provider=provider,
         context=context,
+        router=AgentRouter(provider=provider, audit=audit),
     )
 
 

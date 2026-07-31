@@ -20,6 +20,9 @@ Available tools:
 What you already know about this user (from long-term memory):
 {memory}
 
+Guidance for this kind of request:
+{guidance}
+
 Rules:
 - Reply with a single JSON object and nothing else.
 - Shape: {{"summary": "<one sentence>", "steps": [{{"tool": "<name>", \
@@ -35,6 +38,7 @@ Rules:
 """
 
 NO_MEMORY_PLACEHOLDER = "(nothing relevant remembered)"
+DEFAULT_GUIDANCE = "Pick the least dangerous tool that accomplishes the request."
 
 _FENCE = re.compile(r"```(?:json)?\s*(.*?)\s*```", re.DOTALL)
 
@@ -85,15 +89,24 @@ class Planner:
         self._max_steps = max_steps
         self._memory = memory
 
-    def plan(self, user_message: str, history: list[Message]) -> Plan:
+    def plan(
+        self,
+        user_message: str,
+        history: list[Message],
+        registry: ToolRegistry | None = None,
+        guidance: str = "",
+    ) -> Plan:
+        """Plan against `registry` (defaults to the full set) under `guidance`."""
+        active = registry if registry is not None else self._registry
         system = PLANNER_SYSTEM_PROMPT.format(
-            tools=self._registry.describe_for_prompt(),
+            tools=active.describe_for_prompt(),
             memory=self._recalled(user_message),
+            guidance=guidance or DEFAULT_GUIDANCE,
             max_steps=self._max_steps,
         )
         messages = [*history, Message("user", user_message)]
         raw = self._provider.complete(system, messages)
-        return self._parse(raw)
+        return self._parse(raw, active)
 
     def _recalled(self, user_message: str) -> str:
         """Long-term memory relevant to this message, rendered for the prompt."""
@@ -101,7 +114,7 @@ class Planner:
             return NO_MEMORY_PLACEHOLDER
         return self._memory.describe_for_prompt(user_message) or NO_MEMORY_PLACEHOLDER
 
-    def _parse(self, raw: str) -> Plan:
+    def _parse(self, raw: str, registry: ToolRegistry) -> Plan:
         try:
             payload = json.loads(_extract_json(raw))
         except json.JSONDecodeError as exc:
@@ -126,7 +139,7 @@ class Planner:
             if not isinstance(name, str):
                 raise PlanParseError(f"step {index} has no 'tool' name")
             try:
-                self._registry.get(name)
+                registry.get(name)
             except UnknownToolError as exc:
                 raise PlanParseError(str(exc)) from exc
             arguments = raw_step.get("arguments", {})

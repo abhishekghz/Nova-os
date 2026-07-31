@@ -35,6 +35,19 @@ class ToolRegistry:
     def list_specs(self) -> list[ToolSpec]:
         return [self._specs[name] for name in sorted(self._specs)]
 
+    def subset(self, names: tuple[str, ...] | list[str]) -> "ToolRegistry":
+        """A registry holding only `names`. An empty selection means everything.
+
+        Used to narrow what a specialist agent may reach for, so an agent
+        cannot pick a tool outside its remit even if the model wants to.
+        """
+        if not names:
+            return self
+        scoped = ToolRegistry()
+        for name in names:
+            scoped.register(self.get(name))
+        return scoped
+
     def to_mcp_tools(self) -> list[dict]:
         return [
             {
