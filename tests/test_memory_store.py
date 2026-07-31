@@ -130,6 +130,31 @@ def test_creates_parent_directories(tmp_path):
         store.close()
 
 
+def test_store_is_safe_to_use_from_several_threads(store):
+    """The API serves on a threadpool, so one connection is shared across threads."""
+    import threading
+
+    errors: list[BaseException] = []
+
+    def worker(index: int) -> None:
+        try:
+            for round_ in range(20):
+                store.remember("fact", f"t{index}-{round_}", f"value {index}")
+                store.recall(f"value {index}")
+                store.all()
+        except BaseException as exc:  # noqa: BLE001 - recorded and re-raised below
+            errors.append(exc)
+
+    threads = [threading.Thread(target=worker, args=(i,)) for i in range(8)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert errors == []
+    assert len(store.all()) == 8 * 20
+
+
 def test_describe_for_prompt_is_empty_when_no_matches(store):
     assert store.describe_for_prompt("anything") == ""
 

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import re
 import sqlite3
+import threading
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -62,22 +63,31 @@ def _now() -> str:
 
 
 class MemoryStore:
-    """Durable key/value memory with keyword retrieval."""
+    """Durable key/value memory with keyword retrieval.
+
+    Safe to share across threads: the API serves requests on a threadpool, so
+    the connection is opened with `check_same_thread=False` and every statement
+    runs under a lock. SQLite itself serialises writes; the lock is what makes
+    the Python-side connection object safe to share.
+    """
 
     def __init__(self, db_path: Path) -> None:
         self._path = Path(db_path)
         self._path.parent.mkdir(parents=True, exist_ok=True)
-        self._conn = sqlite3.connect(self._path)
+        self._lock = threading.RLock()
+        self._conn = sqlite3.connect(self._path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
-        self._conn.executescript(_SCHEMA)
-        self._conn.commit()
+        with self._lock:
+            self._conn.executescript(_SCHEMA)
+            self._conn.commit()
 
     @property
     def path(self) -> Path:
         return self._path
 
     def close(self) -> None:
-        self._conn.close()
+        with self._lock:
+            self._conn.close()
 
     def remember(self, kind: str, key: str, value: str) -> MemoryRecord:
         """Insert or update the memory stored under `key`."""
@@ -86,35 +96,39 @@ class MemoryStore:
                 f"unknown memory kind {kind!r}; expected one of {MEMORY_KINDS}"
             )
         now = _now()
-        self._conn.execute(
-            """
-            INSERT INTO memories (kind, key, value, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?)
-            ON CONFLICT(key) DO UPDATE SET
-                kind = excluded.kind,
-                value = excluded.value,
-                updated_at = excluded.updated_at
-            """,
-            (kind, key, value, now, now),
-        )
-        self._conn.commit()
+        with self._lock:
+            self._conn.execute(
+                """
+                INSERT INTO memories (kind, key, value, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(key) DO UPDATE SET
+                    kind = excluded.kind,
+                    value = excluded.value,
+                    updated_at = excluded.updated_at
+                """,
+                (kind, key, value, now, now),
+            )
+            self._conn.commit()
         record = self.get(key)
         assert record is not None  # just written
         return record
 
     def get(self, key: str) -> MemoryRecord | None:
-        row = self._conn.execute(
-            "SELECT * FROM memories WHERE key = ?", (key,)
-        ).fetchone()
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM memories WHERE key = ?", (key,)
+            ).fetchone()
         return _to_record(row) if row is not None else None
 
     def forget(self, key: str) -> bool:
-        cursor = self._conn.execute("DELETE FROM memories WHERE key = ?", (key,))
-        self._conn.commit()
-        return cursor.rowcount > 0
+        with self._lock:
+            cursor = self._conn.execute("DELETE FROM memories WHERE key = ?", (key,))
+            self._conn.commit()
+            return cursor.rowcount > 0
 
     def all(self) -> list[MemoryRecord]:
-        rows = self._conn.execute("SELECT * FROM memories ORDER BY key").fetchall()
+        with self._lock:
+            rows = self._conn.execute("SELECT * FROM memories ORDER BY key").fetchall()
         return [_to_record(r) for r in rows]
 
     def recall(self, query: str, limit: int = 5) -> list[MemoryRecord]:
