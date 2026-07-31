@@ -7,9 +7,11 @@ import sys
 from collections.abc import Callable
 from pathlib import Path
 
+from nova.agents.router import AgentRouter
 from nova.audit import AuditLog
 from nova.config import NovaConfig
 from nova.llm import get_provider
+from nova.memory.store import MemoryStore
 from nova.orchestrator import ConfirmCallback, Orchestrator
 from nova.permissions import DEFAULT_POLICY, PermissionEngine
 from nova.planner import Planner, PlanStep
@@ -28,13 +30,22 @@ def build_orchestrator(config: NovaConfig) -> Orchestrator:
     registry = build_default_registry()
     audit = AuditLog(config.audit_log_path)
     provider = get_provider(config)
-    context = ToolContext(config=config, adapter=get_adapter(), audit=audit)
+    memory = MemoryStore(config.memory_db_path)
+    context = ToolContext(
+        config=config, adapter=get_adapter(), audit=audit, memory=memory
+    )
     return Orchestrator(
-        planner=Planner(provider=provider, registry=registry, max_steps=config.max_plan_steps),
+        planner=Planner(
+            provider=provider,
+            registry=registry,
+            max_steps=config.max_plan_steps,
+            memory=memory,
+        ),
         registry=registry,
         permissions=PermissionEngine(DEFAULT_POLICY, audit),
         provider=provider,
         context=context,
+        router=AgentRouter(provider=provider, audit=audit),
     )
 
 

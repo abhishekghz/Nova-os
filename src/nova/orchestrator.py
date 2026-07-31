@@ -5,6 +5,8 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from nova.agents.base import Agent
+from nova.agents.router import AgentRouter
 from nova.llm.base import LLMProvider, Message
 from nova.permissions import Decision, PermissionEngine
 from nova.planner import Plan, Planner, PlanParseError, PlanStep
@@ -40,6 +42,7 @@ class TurnResult:
     reply: str
     plan: Plan | None
     outcomes: list[StepOutcome]
+    agent: Agent | None = None
 
 
 class Orchestrator:
@@ -52,29 +55,38 @@ class Orchestrator:
         permissions: PermissionEngine,
         provider: LLMProvider,
         context: ToolContext,
+        router: AgentRouter | None = None,
     ) -> None:
         self._planner = planner
         self._registry = registry
         self._permissions = permissions
         self._provider = provider
         self._context = context
+        self._router = router
         self.history: list[Message] = []
 
     def handle(self, user_message: str, confirm: ConfirmCallback) -> TurnResult:
         audit = self._context.audit
 
+        agent = self._router.route(user_message, self.history) if self._router else None
+        scoped = self._registry.subset(agent.tools) if agent else self._registry
+        guidance = agent.guidance if agent else ""
+
         try:
-            plan = self._planner.plan(user_message, self.history)
+            plan = self._planner.plan(
+                user_message, self.history, registry=scoped, guidance=guidance
+            )
         except PlanParseError as exc:
             audit.record("plan_failed", {"message": user_message, "error": str(exc)})
             reply = f"I could not turn that into a plan I trust. ({exc})"
             self._remember(user_message, reply)
-            return TurnResult(reply=reply, plan=None, outcomes=[])
+            return TurnResult(reply=reply, plan=None, outcomes=[], agent=agent)
 
         audit.record(
             "plan_created",
             {
                 "message": user_message,
+                "agent": agent.name if agent else None,
                 "summary": plan.summary,
                 "steps": [{"tool": s.tool, "arguments": s.arguments} for s in plan.steps],
             },
@@ -83,12 +95,12 @@ class Orchestrator:
         if not plan.steps:
             reply = plan.summary
             self._remember(user_message, reply)
-            return TurnResult(reply=reply, plan=plan, outcomes=[])
+            return TurnResult(reply=reply, plan=plan, outcomes=[], agent=agent)
 
         outcomes = self._execute(plan, confirm)
         reply = self._respond(user_message, plan, outcomes)
         self._remember(user_message, reply)
-        return TurnResult(reply=reply, plan=plan, outcomes=outcomes)
+        return TurnResult(reply=reply, plan=plan, outcomes=outcomes, agent=agent)
 
     def _execute(self, plan: Plan, confirm: ConfirmCallback) -> list[StepOutcome]:
         outcomes: list[StepOutcome] = []

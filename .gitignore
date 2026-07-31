@@ -8,3 +8,8 @@ htmlcov/
 nova-audit.jsonl
 workspace/
 .env
+
+# build artifacts
+build/
+dist/
+*.spec.bak

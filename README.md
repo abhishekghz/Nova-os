@@ -1,124 +1,148 @@
-# Project NOVA — Phase 1 Vertical Slice
+# NOVA
 
-A local AI assistant that turns natural language into permission-gated, audited
-actions on your machine. This is the Phase 1 slice of the NOVA PRD: one
-end-to-end path through plan → permission → execute → verify → respond.
+## 1. Download
 
-## Requirements
+Grab the build for your machine from the
+[latest release](https://github.com/abhishekghz/Nova-os/releases/latest).
+No Python needed.
 
-- Windows 10/11, macOS 13+ (Apple Silicon or Intel), or Linux
-- Python 3.11
-- An Anthropic API key for live use (tests run offline)
+| Platform | File |
+|---|---|
+| Windows | `nova-windows-x64.exe` |
+| macOS (Apple Silicon) | `nova-macos-arm64` |
+| Linux | `nova-linux-x64` |
 
-## Setup
+On macOS and Linux, make it executable first:
 
-Windows:
+```bash
+chmod +x nova-macos-arm64
+```
+
+Then skip to step 3.
+
+## 2. Or install from source
+
+Requires Python 3.11.
+
+**Windows**
 
 ```powershell
+git clone https://github.com/abhishekghz/Nova-os.git
+cd Nova-os
 py -3.11 -m venv .venv
 .venv\Scripts\python.exe -m pip install -e ".[dev]"
 ```
 
-macOS / Linux:
+**macOS / Linux**
 
 ```bash
+git clone https://github.com/abhishekghz/Nova-os.git
+cd Nova-os
 python3.11 -m venv .venv
 .venv/bin/python -m pip install -e ".[dev]"
 ```
 
-## Run the chat interface
+## 3. Set your API key
 
-Windows:
+**Windows**
 
 ```powershell
-$env:ANTHROPIC_API_KEY = "<your key>"
+$env:ANTHROPIC_API_KEY = "your-key-here"
+```
+
+**macOS / Linux**
+
+```bash
+export ANTHROPIC_API_KEY="your-key-here"
+```
+
+## 4. Run
+
+**Windows**
+
+```powershell
 .venv\Scripts\python.exe -m nova.cli
 ```
 
-macOS / Linux:
+**macOS / Linux**
 
 ```bash
-export ANTHROPIC_API_KEY="<your key>"
 .venv/bin/python -m nova.cli
 ```
 
-## Run the tests
+Type a request in plain language. Type `/exit` to quit.
+
+```
+you> list the files in my workspace
+you> create notes.txt with my meeting agenda
+you> what is in notes.txt
+```
+
+Actions that write files or run commands ask for confirmation first. Answer `y` to allow.
+
+If you downloaded the binary, run it directly instead:
+
+```bash
+./nova-windows-x64.exe
+```
+
+## 5. Run the API server
+
+```bash
+./nova-windows-x64.exe serve
+```
+
+It prints an API key on start. Send it as the `X-API-Key` header.
+
+```bash
+curl -H "X-API-Key: YOUR-KEY" http://127.0.0.1:8765/tools
+```
+
+```bash
+curl -X POST http://127.0.0.1:8765/chat -H "X-API-Key: YOUR-KEY" -H "Content-Type: application/json" -d "{\"message\": \"list my files\"}"
+```
+
+From source, use `.venv\Scripts\python.exe -m nova.server` on Windows or
+`.venv/bin/python -m nova.server` on macOS and Linux.
+
+## 6. Settings
+
+Set any of these before running.
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `NOVA_WORKSPACE_ROOT` | `./workspace` | The only folder NOVA may touch |
+| `NOVA_AUDIT_LOG_PATH` | `<workspace>/nova-audit.jsonl` | Log of every action taken |
+| `NOVA_SHELL_TIMEOUT_SECONDS` | `30` | Per-command timeout |
+| `NOVA_MAX_PLAN_STEPS` | `8` | Max actions per request |
+| `NOVA_API_KEY` | generated | Key for the API server |
+| `NOVA_API_HOST` | `127.0.0.1` | API server bind address |
+| `NOVA_API_PORT` | `8765` | API server port |
+
+## 7. Run the tests
+
+**Windows**
+
+```powershell
+.venv\Scripts\python.exe -m pytest
+```
+
+**macOS / Linux**
 
 ```bash
 .venv/bin/python -m pytest
 ```
 
-On Windows use `.venv\Scripts\python.exe -m pytest`. The suite is identical on
-every platform: adapter logic is pure `pathlib` and argv construction, and the
-handful of tests that spawn a real shell pick their command from the
-`shell_snippets` fixture in `tests/conftest.py`.
+## 8. Use the tools from an MCP client
 
-## Configuration
+**Windows**
 
-All settings come from the environment, with defaults in `src/nova/config.py`:
-
-| Variable | Default | Meaning |
-|---|---|---|
-| `NOVA_WORKSPACE_ROOT` | `./workspace` | The only directory tools may touch |
-| `NOVA_AUDIT_LOG_PATH` | `<workspace>/nova-audit.jsonl` | Append-only action log |
-| `NOVA_LLM_PROVIDER` | `anthropic` | `anthropic` or `fake` |
-| `NOVA_LLM_MODEL` | `claude-opus-5` | Model ID |
-| `NOVA_SHELL_TIMEOUT_SECONDS` | `30` | Per-command shell timeout |
-| `NOVA_MAX_PLAN_STEPS` | `8` | Maximum tool calls per turn |
-
-## Security model
-
-- **Workspace containment.** Every filesystem path is resolved against
-  `NOVA_WORKSPACE_ROOT`; anything escaping it raises `PathOutsideWorkspaceError`.
-- **Permission policy.** Read tools run automatically; write and execute tools
-  prompt for confirmation; execute-risk commands matching the destructive
-  patterns in `src/nova/permissions.py` are refused outright, before the
-  confirmation prompt is ever reached.
-- **Audit trail.** Every permission decision and every execution is appended to
-  the JSONL audit log. Nothing rewrites or truncates it.
-
-## Architecture
-
-```
-user message
-     |
-  Planner            LLM turns the message into a validated list of tool calls
-     |
-PermissionEngine     allow / confirm / deny, per tool risk and policy
-     |
- ToolRegistry        the single source of truth for capabilities
-     |
-PlatformAdapter      Windows PowerShell | macOS bash | Linux bash
-     |
-  AuditLog           append-only JSONL record of everything above
+```powershell
+.venv\Scripts\python.exe -m nova.mcp_server
 ```
 
-`Orchestrator.handle()` in `src/nova/orchestrator.py` is the whole pipeline.
-
-## Use NOVA's tools from another MCP client
+**macOS / Linux**
 
 ```bash
 .venv/bin/python -m nova.mcp_server
 ```
-
-This serves the same `ToolRegistry` over MCP stdio, so external clients get
-identical behaviour to the built-in orchestrator. Written against the mcp 2.x
-server API.
-
-## Platform support
-
-| Platform | Status |
-|---|---|
-| Windows | Supported. PowerShell backend. |
-| macOS (Apple Silicon / Intel) | Supported. bash backend. |
-| Linux | Supported. bash backend. |
-| iOS / Android | Not in this slice — blocked on the cloud gateway. |
-
-Adding a platform means adding one class to `src/nova/platform/` and one entry
-to `_ADAPTERS`. Nothing outside that package makes an OS-specific call.
-
-## Not in this slice
-
-Voice, the mobile companions, the cloud gateway, multi-agent orchestration,
-long-term memory, the plugin marketplace, and the REST/WebSocket APIs are
-follow-on plans. See `docs/superpowers/plans/`.

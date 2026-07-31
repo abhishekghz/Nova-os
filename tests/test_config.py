@@ -8,6 +8,7 @@ def test_from_env_uses_defaults_when_env_is_empty(tmp_path):
 
     assert config.workspace_root == tmp_path.resolve()
     assert config.audit_log_path == (tmp_path / "nova-audit.jsonl").resolve()
+    assert config.memory_db_path == (tmp_path / "nova-memory.db").resolve()
     assert config.llm_provider == "anthropic"
     assert config.llm_model == "claude-opus-5"
     assert config.shell_timeout_seconds == 30
