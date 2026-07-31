@@ -7,7 +7,15 @@ from nova.tools.builtin import build_default_registry
 def test_list_tools_exposes_every_registered_tool():
     tools = list_tools(build_default_registry())
 
-    assert [t.name for t in tools] == ["file_list", "file_read", "file_write", "shell_run"]
+    assert [t.name for t in tools] == [
+        "file_list",
+        "file_read",
+        "file_write",
+        "memory_forget",
+        "memory_recall",
+        "memory_remember",
+        "shell_run",
+    ]
     assert tools[0].description
     # mcp 2.x exposes the field as input_schema, serialised under the
     # "inputSchema" alias on the wire.

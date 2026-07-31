@@ -8,6 +8,7 @@ from enum import StrEnum
 
 from nova.audit import AuditLog
 from nova.config import NovaConfig
+from nova.memory.store import MemoryStore
 from nova.platform.base import PlatformAdapter
 
 
@@ -35,6 +36,7 @@ class ToolContext:
     config: NovaConfig
     adapter: PlatformAdapter
     audit: AuditLog
+    memory: MemoryStore | None = None
 
 
 @dataclass(frozen=True)

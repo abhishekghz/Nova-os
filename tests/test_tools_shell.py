@@ -56,5 +56,8 @@ def test_default_registry_contains_every_slice_tool():
         "file_list",
         "file_read",
         "file_write",
+        "memory_forget",
+        "memory_recall",
+        "memory_remember",
         "shell_run",
     ]

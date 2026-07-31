@@ -4,6 +4,7 @@ import pytest
 
 from nova.audit import AuditLog
 from nova.config import NovaConfig
+from nova.memory.store import MemoryStore
 from nova.platform import get_adapter
 from nova.tools.base import ToolContext
 
@@ -41,8 +42,13 @@ def tool_context(tmp_path):
         {"NOVA_WORKSPACE_ROOT": str(workspace), "NOVA_SHELL_TIMEOUT_SECONDS": "20"},
         default_root=workspace,
     )
-    return ToolContext(
-        config=config,
-        adapter=get_adapter(),
-        audit=AuditLog(config.audit_log_path),
-    )
+    memory = MemoryStore(config.memory_db_path)
+    try:
+        yield ToolContext(
+            config=config,
+            adapter=get_adapter(),
+            audit=AuditLog(config.audit_log_path),
+            memory=memory,
+        )
+    finally:
+        memory.close()

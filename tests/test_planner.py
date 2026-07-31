@@ -87,6 +87,40 @@ def test_rejects_arguments_that_are_not_an_object():
         _planner([response]).plan("do it", [])
 
 
+def test_prompt_says_nothing_remembered_without_a_memory_store():
+    provider = ScriptedProvider([VALID_PLAN])
+    planner = Planner(provider=provider, registry=build_default_registry(), max_steps=8)
+
+    planner.plan("anything", [])
+
+    system, _ = provider.calls[0]
+    assert "(nothing relevant remembered)" in system
+
+
+def test_prompt_injects_relevant_long_term_memory(tmp_path):
+    from nova.memory.store import MemoryStore
+
+    store = MemoryStore(tmp_path / "m.db")
+    try:
+        store.remember("preference", "editor", "VS Code")
+        store.remember("project", "mri", "MRI segmentation in PyTorch")
+        provider = ScriptedProvider([VALID_PLAN])
+        planner = Planner(
+            provider=provider,
+            registry=build_default_registry(),
+            max_steps=8,
+            memory=store,
+        )
+
+        planner.plan("open my editor", [])
+
+        system, _ = provider.calls[0]
+        assert "VS Code" in system
+        assert "MRI segmentation" not in system  # irrelevant memory is not injected
+    finally:
+        store.close()
+
+
 def test_prompt_includes_the_tool_catalogue_and_history():
     provider = ScriptedProvider([VALID_PLAN])
     planner = Planner(provider=provider, registry=build_default_registry(), max_steps=8)
