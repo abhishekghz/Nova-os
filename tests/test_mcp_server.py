@@ -11,10 +11,14 @@ def test_list_tools_exposes_every_registered_tool():
         "file_list",
         "file_read",
         "file_write",
+        "git_diff",
+        "git_log",
+        "git_status",
         "memory_forget",
         "memory_recall",
         "memory_remember",
         "shell_run",
+        "system_info",
     ]
     assert tools[0].description
     # mcp 2.x exposes the field as input_schema, serialised under the

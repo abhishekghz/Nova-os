@@ -56,8 +56,12 @@ def test_default_registry_contains_every_slice_tool():
         "file_list",
         "file_read",
         "file_write",
+        "git_diff",
+        "git_log",
+        "git_status",
         "memory_forget",
         "memory_recall",
         "memory_remember",
         "shell_run",
+        "system_info",
     ]

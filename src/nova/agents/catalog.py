@@ -15,13 +15,26 @@ FILE_AGENT = Agent(
     ),
 )
 
+DEVELOPER_AGENT = Agent(
+    name="developer",
+    description=(
+        "Source code and repositories: git history, uncommitted changes, "
+        "reading and editing project files."
+    ),
+    tools=("git_diff", "git_log", "git_status", "file_list", "file_read", "file_write"),
+    guidance=(
+        "Inspect before you change: check status and diff before editing. "
+        "Never rewrite a file you have not read."
+    ),
+)
+
 SYSTEM_AGENT = Agent(
     name="system",
     description=(
         "Running commands, inspecting the machine, processes, installed tools "
         "and anything that needs a shell."
     ),
-    tools=("shell_run", "file_list", "file_read"),
+    tools=("shell_run", "system_info", "file_list", "file_read"),
     guidance=(
         "Prefer a read-only inspection command over one that changes state. "
         "Run one command at a time and check its output before the next. "
@@ -55,6 +68,7 @@ GENERAL_AGENT = Agent(
 
 AGENTS: tuple[Agent, ...] = (
     FILE_AGENT,
+    DEVELOPER_AGENT,
     SYSTEM_AGENT,
     MEMORY_AGENT,
     GENERAL_AGENT,
