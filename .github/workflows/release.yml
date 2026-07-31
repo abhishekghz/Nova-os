@@ -1,0 +1,134 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  binaries:
+    name: Build ${{ matrix.label }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            label: windows-x64
+            binary: nova.exe
+            asset: nova-windows-x64.exe
+          - os: macos-latest
+            label: macos-arm64
+            binary: nova
+            asset: nova-macos-arm64
+          - os: ubuntu-latest
+            label: linux-x64
+            binary: nova
+            asset: nova-linux-x64
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+          python -m pip install pyinstaller
+
+      - name: Test before packaging
+        run: python -m pytest -q
+
+      - name: Build executable
+        run: pyinstaller packaging/nova.spec --clean --noconfirm
+
+      - name: Smoke-test the executable
+        shell: bash
+        run: |
+          ./dist/${{ matrix.binary }} version
+          ./dist/${{ matrix.binary }} help
+
+      - name: Rename for release
+        shell: bash
+        run: mv "dist/${{ matrix.binary }}" "dist/${{ matrix.asset }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: dist/${{ matrix.asset }}
+
+  wheel:
+    name: Build wheel and sdist
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Build
+        run: |
+          python -m pip install --upgrade pip build
+          python -m build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: python-packages
+          path: dist/*
+
+  publish:
+    name: Publish release
+    needs: [binaries, wheel]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Flatten
+        run: |
+          mkdir -p release
+          find artifacts -type f -exec cp {} release/ \;
+          ls -la release
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: release/*
+          generate_release_notes: true
+          body: |
+            ## Downloads
+
+            No Python installation required for the standalone builds.
+
+            | Platform | File |
+            |---|---|
+            | Windows | `nova-windows-x64.exe` |
+            | macOS (Apple Silicon) | `nova-macos-arm64` |
+            | Linux | `nova-linux-x64` |
+
+            On macOS and Linux, mark it executable first:
+
+            ```
+            chmod +x nova-macos-arm64
+            ```
+
+            ### Usage
+
+            ```
+            nova            Interactive chat
+            nova serve      REST + WebSocket API
+            nova mcp        MCP stdio server
+            nova version    Print the version
+            ```
+
+            Set `ANTHROPIC_API_KEY` before use.
+
+            ### Install with pip instead
+
+            ```
+            pip install nova-0.1.0-py3-none-any.whl
+            ```
